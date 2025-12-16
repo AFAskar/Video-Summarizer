@@ -131,11 +131,11 @@ def summarizer(text: str, model: str, userprompt: str, systemprompt: str) -> str
         messages=[
             {
                 "role": "system",
-                "content": "You are a helpful assistant that summarizes text.",
+                "content": f"{systemprompt}",
             },
             {
                 "role": "user",
-                "content": f"Summarize the following text:\n{text.strip()}",
+                "content": f"{userprompt}:\n{text.strip()}",
             },
         ],
     )
