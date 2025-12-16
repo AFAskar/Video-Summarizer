@@ -16,7 +16,6 @@ Recursive Summarization means breaking down a large text into smaller chunks,
 summarizing each chunk individually, and then combining those summaries into a final summary. 
 each of those summaries can be further summarized if they are still too long.
 """
-# TODO: add persistent cache for the LLM calls and for the yt download, you can use joblib memory or build your own using json, or use redis
 # TODO: recursive summarization using chunking
 # TODO: bonus: split based on silences using the subtitle timestmps
 CACHE_DIR = "./cache/"
@@ -80,7 +79,6 @@ def downloader(url: str, path: Path, reqlang: str, subtitleformat: str = "srt") 
             if not sub_file.exists():
                 raise ValueError(f"No subtitles found for language: {reqlang}")
         sub_content = sub_file.read_text(encoding="utf-8")
-        os.remove(sub_file)
     # clean subtitle content
     # remove timestamps and line numbers
     sub_content = re.sub(
@@ -125,7 +123,6 @@ def summarizer(text: str, model: str, userprompt: str, systemprompt: str) -> str
     if not max_tokens:
         raise ValueError(f"Could not retrieve model info for model: {model}")
     max_tokens = max_tokens - 500  # leave some buffer for response tokens
-    text = text[:2000]  # rough estimate of input tokens
     completion = client.chat.completions.create(
         model=model,
         messages=[
