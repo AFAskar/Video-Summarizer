@@ -50,45 +50,45 @@ def cli(
         help="OpenRouter model to use for summarization",
     ),
 ):
+
     sub = downloader(url, output, language)
-    summary = summarizer(sub, model)
+    systemprompt = " You are a helpful assistant that summarizes video subtitles into concise summaries."
+    userprompt = f"Provide a concise summary in {language} of the following subtitles from a video"
+    summary = summarizer(sub, model, userprompt, systemprompt)
+
     print(summary)
-
-
-def get_from_cache(
-    url: str,
-    cache_file="cache.json",
-):
-    if os.path.exists(cache_file):
-        with open(cache_file, "r") as f:
-            cache = json.load(f)
-        return cache.get(url)
-    return None
 
 
 # Downloads video and subtitles , only saves Video to a file
 @memory.cache(ignore=["path"])
-def downloader(url: str, path: Path, reqlang: str) -> str:
+def downloader(url: str, path: Path, reqlang: str, subtitleformat: str = "srt") -> str:
     ydl_opts = {
         "subtitleslangs": [reqlang],
-        "writesubtitles": False,
+        "writesubtitles": True,
+        "skip_download": not bool(path),
+        "subtitlesformat": subtitleformat,
+        "writeautomaticsub": True,
+        "outtmpl": str(path) if path else "%(title)s.%(ext)s",
     }
-
-    if path:
-        ydl_opts["outtmpl"] = str(path)
-
     with YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=False)
-        subtitles = info.get("subtitles", {})
-        langsub = subtitles.get(reqlang) or info.get("automatic_captions", {}).get(
-            reqlang
-        )
-        if not langsub:
-            raise ValueError(f"No subtitles found for language: {reqlang}")
-        sub_url = langsub[0]["url"]
-        response = requests.get(sub_url)
-        sub_content = response.text
-
+        info = ydl.extract_info(url)
+        base = Path(ydl.prepare_filename(info)).with_suffix("")
+        sub_file = base.with_suffix(f".{reqlang}.{subtitleformat}")
+        if not sub_file.exists():
+            # Try automatic captions
+            sub_file = base.with_suffix(f".{reqlang}.auto.{subtitleformat}")
+            if not sub_file.exists():
+                raise ValueError(f"No subtitles found for language: {reqlang}")
+        sub_content = sub_file.read_text(encoding="utf-8")
+        os.remove(sub_file)
+    # clean subtitle content
+    # remove timestamps and line numbers
+    sub_content = re.sub(
+        r"^\d+\n|\d{2}:\d{2}:\d{2},\d{3} --> \d{2}:\d{2}:\d{2},\d{3}\n",
+        "",
+        sub_content,
+        flags=re.MULTILINE,
+    )
     # remove html tags from subtitles
     sub_content = re.sub(r"<[^>]+>", "", sub_content)
     # replace multiple newlines with single newline
