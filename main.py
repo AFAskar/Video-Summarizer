@@ -288,7 +288,6 @@ def chunk_summarize_recursive(
     input_budget = get_safe_context_length(model)
     cleaned_text = clean_subtitle(text)
     token_count = count_chat_tokens(cleaned_text)
-    # if text is too long, split into chunks and summarize each chunk
     if token_count > input_budget:
         chunks = split_into_chunks(text)
         summarize_chunk = partial(
@@ -298,9 +297,6 @@ def chunk_summarize_recursive(
             systemprompt=systemprompt,
         )
         summaries = list(map(summarize_chunk, chunks))
-        # for chunk in chunks:
-        #     summary = summarize_chunk(chunk)
-        #     summaries.append(summary)
 
         combined_summary = "\n\n".join(summaries)
 
