@@ -81,21 +81,40 @@ def downloader(url: str, path: Path, reqlang: str, subtitleformat: str = "srt") 
         sub_content = sub_file.read_text(encoding="utf-8")
     # clean subtitle content
     # remove timestamps and line numbers
-    sub_content = re.sub(
+
+    return sub_content
+
+
+@memory.cache()
+def split_into_chunks(subtitle: str) -> list[str]:
+    # split subtitle into chunks based on silences(long time gaps between timestamps)
+
+    return
+
+
+def merge_chunks(chunks: list[str]) -> str:
+    # clean and merge chunks into single text
+    merged_text = "\n".join([clean_subtitle(chunk) for chunk in chunks])
+    return merged_text
+
+
+@memory.cache()
+def clean_subtitle(text: str) -> str:
+    text = re.sub(
         r"^\d+\n|\d{2}:\d{2}:\d{2},\d{3} --> \d{2}:\d{2}:\d{2},\d{3}\n",
         "",
-        sub_content,
+        text,
         flags=re.MULTILINE,
     )
     # remove html tags from subtitles
-    sub_content = re.sub(r"<[^>]+>", "", sub_content)
+    text = re.sub(r"<[^>]+>", "", text)
     # replace multiple newlines with single newline
-    sub_content = re.sub(r"\n+", "\n", sub_content)
+    text = re.sub(r"\n+", "\n", text)
     # replace multiple spaces with single space
-    sub_content = re.sub(r" +", " ", sub_content)
+    text = re.sub(r" +", " ", text)
     # trim leading and trailing spaces
-    sub_content = sub_content.strip()
-    return sub_content
+    text = text.strip()
+    return text
 
 
 @memory.cache()
