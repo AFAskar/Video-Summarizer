@@ -1,4 +1,3 @@
-from yt_dlp import YoutubeDL
 import typer
 from pathlib import Path
 import requests
@@ -9,7 +8,6 @@ from rich.markdown import Markdown
 from rich.progress import Progress, SpinnerColumn, TextColumn
 import os
 import re
-import json
 from joblib import Memory
 import srt
 import tiktoken
@@ -25,7 +23,7 @@ from ythelper import download_audio, download_multi_subs, download_subtitle, yts
 # TODO: Implement Fallback to Whisper if no subtitles found (blocker above)
 # TODO: add option to send a search query instead of URL (function done needs to be integrated)
 _tokenizer = tiktoken.get_encoding("cl100k_base")
-
+divdiv = 1
 console = Console()
 app = typer.Typer()
 
@@ -41,10 +39,14 @@ client = OpenAI(
 )
 memory = Memory(CACHE_DIR, verbose=0)
 
-SYSTEMPROMPT = "You are a helpful assistant that summarizes video subtitles into concise summaries. output the summary in markdown format. use headings and bullet points where appropriate."
-USERPROMPT = (
+SYSTEMPROMPT = "You are a helpful assistant that answers questions based on the information provided to you."
+
+SUMMARYPROMPT = """You are a helpful assistant that summarizes video subtitles into concise summaries. output the summary in markdown format. use headings and bullet points where appropriate."""
+
+SUMMARYUSERPROMPT = (
     "Provide a concise summary in {language} of the following subtitles from a video"
 )
+USERPROMPT = "Provide an Answer to the Users query Provided Here"
 
 
 @app.command()
@@ -68,6 +70,7 @@ def cli(
         "--model",
         help="OpenRouter model to use for summarization",
     ),
+    query: str = typer.Option(None, "-q", "--query", help="What do you want to ask"),
     keepfiles: str = typer.Option(
         "",
         "-k",
@@ -75,6 +78,15 @@ def cli(
         help="Keep downloaded subtitle and audio files. Options: 'a' for audio, 's' for subtitles (comma-separated)",
     ),
 ):
+    isurl = validators.url(url)
+    parrec = partial(
+        chunk_summarize_recursive,
+        model=model,
+        userprompt=(
+            SUMMARYUSERPROMPT.format(language=language) if isurl else USERPROMPT
+        ),
+        systemprompt=(SUMMARYPROMPT if isurl else SYSTEMPROMPT),
+    )
     daudio = "a" in keepfiles
     dsub = "s" in keepfiles
     # Download subtitles spinner
@@ -84,18 +96,23 @@ def cli(
         console=console,
     ) as progress:
         download_task = progress.add_task("Downloading subtitles...", total=None)
+        if isurl:
+            sub = downloader(url=url, reqlang=language, audio=daudio, subtitle=dsub)
+        else:
+            term = ytsearch(query if query else url)
+            ls = download_multi_subs(term)
+            divdiv = len(ls)
+            sub = "\n\n\n---\n\n\n".join(list(map(parrec, ls)))
 
-        sub = downloader(url=url, reqlang=language, audio=daudio, subtitle=dsub)
         progress.remove_task(download_task)
         console.print("✓ Subtitles downloaded")
 
         summarize_task = progress.add_task("Summarizing subtitles...", total=None)
-        summary = chunk_summarize_recursive(
-            sub,
-            model,
-            userprompt=USERPROMPT.format(language=language),
-            systemprompt=SYSTEMPROMPT,
-        )
+        # run this once per video
+
+        summary = parrec(sub)
+        # results in summaries list, the total length of all the summaries should fit in the input context size, this is something to consider when calculating the budget (it should be divided by the number of videos)
+        # and all of those should be joined and then put into one LLM call which answers the question (or produces the final summary)
         progress.remove_task(summarize_task)
         console.print("✓ Summary complete")
 
@@ -236,11 +253,13 @@ def get_safe_context_length(
 
 
 def chunk_summarize_recursive(
-    text, model: str, userprompt: str = USERPROMPT, systemprompt: str = SYSTEMPROMPT
+    chunks: list[str],
+    model: str,
+    userprompt: str = USERPROMPT,
+    systemprompt: str = SYSTEMPROMPT,
 ) -> str:
     input_budget = get_safe_context_length(model)
-    cleaned_text = clean_subtitle(text)
-    token_count = count_chat_tokens(cleaned_text)
+    token_count = count_chat_tokens(text)
     if token_count > input_budget:
         chunks = split_into_chunks(text)
         summarize_chunk = partial(

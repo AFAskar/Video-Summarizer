@@ -1,5 +1,7 @@
 from yt_dlp import YoutubeDL
 from pathlib import Path
+from multiprocessing.pool import ThreadPool
+from tqdm import tqdm
 
 
 def ytsearch(query: str) -> list[str]:
@@ -19,11 +21,12 @@ def ytsearch(query: str) -> list[str]:
 
 
 def download_multi_subs(urls: list[str], reqlang: str = "en") -> list[str]:
-    subtitles = []
-    for url in urls:
-        sub = download_subtitle(url, reqlang)
-        subtitles.append(sub)
-    return subtitles
+    return list(
+        tqdm(
+            ThreadPool().imap(lambda url: download_subtitle(url, reqlang), urls),
+            total=len(urls),
+        )
+    )
 
 
 def download_subtitle(url: str, reqlang: str = "en", subtitle: bool = False) -> str:
