@@ -29,7 +29,7 @@ app = typer.Typer()
 
 model_size = "small.en"
 
-model = WhisperModel(model_size, device="cpu", compute_type="int8")
+sst = WhisperModel(model_size, device="cpu", compute_type="int8")
 
 CACHE_DIR = "./cache/"
 
@@ -90,8 +90,8 @@ def cli(
         help="Keep downloaded subtitle and audio files. Options: 'a' for audio, 's' for subtitles (comma-separated)",
     ),
 ):
-
-    keepfiles = [k.strip().lower() for k in keepfiles.split(",") if k.strip()]
+    daudio = "a" in keepfiles
+    dsub = "s" in keepfiles
     # Download subtitles spinner
     with Progress(
         SpinnerColumn(),
@@ -100,7 +100,7 @@ def cli(
     ) as progress:
         download_task = progress.add_task("Downloading subtitles...", total=None)
 
-        sub = downloader(url=url, reqlang=language, keepfiles=keepfiles)
+        sub = downloader(url=url, reqlang=language, audio=daudio, subtitle=dsub)
         progress.remove_task(download_task)
         console.print("✓ Subtitles downloaded")
 
@@ -126,7 +126,7 @@ def cli(
 
 
 def generate_transcript_using_whisper(audio_file: Path, language: str = "en") -> str:
-    segments, info = model.transcribe(
+    segments, info = sst.transcribe(
         str(audio_file),
         beam_size=5,
         word_timestamps=True,
@@ -209,13 +209,8 @@ def download_audio(url: str) -> str:
 
 @memory.cache()
 def downloader(
-    url: str,
-    reqlang: str,
-    keepfiles: list = [],
+    url: str, reqlang: str, audio: bool = False, subtitle: bool = False
 ) -> str:
-    audio = True if "a" in keepfiles else False
-    subtitle = True if "s" in keepfiles else False
-
     if audio:
         file = download_audio(url, audio_only=True)
 
