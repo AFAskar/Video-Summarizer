@@ -16,7 +16,6 @@ from faster_whisper import WhisperModel
 from multiprocessing.pool import ThreadPool
 from datetime import timedelta
 
-# import validators
 from ythelper import download_audio, download_multi_subs, download_subtitle, ytsearch
 
 # TODO: add concurrensy for downloading audio in the background while downloading subtitles
@@ -130,6 +129,14 @@ def cli(
     console.print(Markdown("\n# Summary\n" + summary))
 
 
+def issrt(text: str) -> bool:
+    try:
+        list(srt.parse(text))
+        return True
+    except Exception:
+        return False
+
+
 @memory.cache()
 def generate_transcript_using_whisper(audio_file: Path, language: str = "en") -> str:
     segments, info = sst.transcribe(
@@ -178,7 +185,7 @@ def downloader(
     return sub_content
 
 
-def split_into_chunks(subtitle: str) -> list[str]:
+def semantic_chunker(subtitle: str) -> list[str]:
     # split subtitle into chunks based on silences(long time gaps between timestamps)
     subtitles = list(srt.parse(subtitle))
     chunks = []
@@ -194,7 +201,9 @@ def split_into_chunks(subtitle: str) -> list[str]:
         last_end = sub.end
     if current_chunk:
         chunks.append(srt.compose(current_chunk))
-    return chunks
+
+    # Clean each chunk after composing
+    return [clean_subtitle(chunk) for chunk in chunks]
 
 
 def clean_subtitle(text: str) -> str:
@@ -255,6 +264,23 @@ def get_safe_context_length(
     return int(max_tokens * margin) - response_buffer
 
 
+def non_semantic_chunker(text: str, max_chunk_size: int) -> list[str]:
+    words = text.split()
+    chunks = []
+    current_chunk = []
+
+    for word in words:
+        current_chunk.append(word)
+        if len(" ".join(current_chunk)) >= max_chunk_size:
+            chunks.append(" ".join(current_chunk))
+            current_chunk = []
+
+    if current_chunk:
+        chunks.append(" ".join(current_chunk))
+
+    return chunks
+
+
 def chunk_summarize_recursive(
     chunks: list[str],
     model: str,
@@ -267,7 +293,11 @@ def chunk_summarize_recursive(
         input_budget = input_budget // len(chunks)
     token_count = count_chat_tokens(text)
     if token_count > input_budget:
-        chunks = split_into_chunks(text)
+        if issrt(text):
+            chunks = semantic_chunker(text)
+        else:
+            chunks = non_semantic_chunker(text, max_chunk_size=1000)
+
         summarize_chunk = partial(
             chat_completion,
             model=model,
