@@ -129,6 +129,28 @@ def download_subtitle(url: str, reqlang: str, subtitle: bool = False) -> str:
     return sub_content
 
 
+# Download Video and Audio based on keepfiles
+def download_video_audio(url: str, video: bool = True, audio: bool = False) -> None:
+    ydl_opts = {
+        "skip_download": not (video or audio),
+        "format_sort": ["+size", "+res"],
+        "quiet": True,
+        "no_warnings": True,
+    }
+    if audio and not video:
+        ydl_opts["format"] = "bestaudio/best"
+        ydl_opts["postprocessors"] = [
+            {
+                "key": "FFmpegExtractAudio",
+                "preferredcodec": "mp3",
+                "preferredquality": "192",
+            }
+        ]
+    with YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(url)
+    return
+
+
 # Downloads video and subtitles , only saves Video to a file
 @memory.cache()
 def downloader(
