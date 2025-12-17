@@ -14,6 +14,8 @@ from joblib import Memory
 import srt
 import tiktoken
 from functools import partial
+from faster_whisper import WhisperModel
+
 
 # TODO: use concurrensy or threading to speed up return to console (get summary whilst downloading vid or vicea versa)
 
@@ -21,6 +23,10 @@ _tokenizer = tiktoken.get_encoding("cl100k_base")
 
 console = Console()
 app = typer.Typer()
+
+model_size = "small.en"
+
+model = WhisperModel(model_size, device="cpu", compute_type="int8")
 
 CACHE_DIR = "./cache/"
 
@@ -73,6 +79,7 @@ def cli(
         console=console,
     ) as progress:
         download_task = progress.add_task("Downloading subtitles...", total=None)
+
         sub = downloader(url=url, reqlang=language, keepfiles=keepfiles)
         progress.remove_task(download_task)
         console.print("✓ Subtitles downloaded")
@@ -98,6 +105,10 @@ def cli(
     console.print(Markdown("\n# Summary\n" + summary))
 
 
+def generate_transcript_using_whisper(audio_file: Path, language: str) -> str:
+    return transcript
+
+
 def download_subtitle(url: str, reqlang: str, subtitle: bool = False) -> str:
     ydl_opts = {
         "subtitleslangs": [reqlang],
@@ -115,7 +126,6 @@ def download_subtitle(url: str, reqlang: str, subtitle: bool = False) -> str:
         base = Path(ydl.prepare_filename(info)).with_suffix("")
         sub_file = base.with_suffix(f".{reqlang}.srt")
         if not sub_file.exists():
-            # Try automatic captions
             sub_file = base.with_suffix(f".{reqlang}.auto.srt")
             if not sub_file.exists():
                 sub_file = base.with_suffix(f".{reqlang}.auto.vtt")
@@ -123,33 +133,27 @@ def download_subtitle(url: str, reqlang: str, subtitle: bool = False) -> str:
                 raise ValueError(f"No subtitles found for language: {reqlang}")
         sub_content = sub_file.read_text(encoding="utf-8")
         if not subtitle:
-            try:
-                sub_file.unlink()
-            except Exception as e:
-                print(f"Error deleting files: {e}")
+            sub_file.unlink()
 
     return sub_content
 
 
 # Download Video and Audio based on keepfiles
-def download_video_audio(url: str, audio_only: bool = False) -> None:
+def download_video_audio(url: str) -> None:
     ydl_opts = {
         "skip_download": False,
-        "format_sort": ["+size", "+res"],
-        "quiet": True,
-        "no_warnings": True,
-        "no_overwrites": True,
-    }
-    if audio_only:
-        ydl_opts["format"] = "bestaudio/best"
-        ydl_opts["postprocessors"] = [
+        "format": "bestaudio/best",
+        "postprocessors": [
             {
                 "key": "FFmpegExtractAudio",
                 "preferredcodec": "mp3",
                 "preferredquality": "192",
             }
-        ]
-    # need to check if file exists before continuing
+        ],
+        "quiet": True,
+        "no_warnings": True,
+        "no_overwrites": True,
+    }
     with YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url)
     return
@@ -165,13 +169,26 @@ def downloader(
     audio = True if "a" in keepfiles else False
     subtitle = True if "s" in keepfiles else False
 
-    if audio and not video:
+    if audio:
         download_video_audio(url, audio_only=True)
 
     if video:
         download_video_audio(url, audio_only=False)
+    try:
+        sub_content = download_subtitle(url, reqlang, subtitle=subtitle)
+    except ValueError as e:
+        # use whisper to generate subtitles if not found
+        console.print("No subtitles found, generating using Whisper...")
 
-    sub_content = download_subtitle(url, reqlang, subtitle=subtitle)
+        if audio and not video:
+            # use directly
+            pass
+        if video:
+            # parse audio from video
+            pass
+        else:
+            download_video_audio(url, audio_only=True)
+
     return sub_content
 
 
@@ -269,7 +286,7 @@ def chunk_summarize_recursive(
             userprompt=userprompt,
             systemprompt=systemprompt,
         )
-        summaries = list(map(summarize_chunk, chunks))
+        summaries = list(ThreadPool(4).imap(summarize_chunk, chunks))
 
         combined_summary = "\n\n".join(summaries)
 
