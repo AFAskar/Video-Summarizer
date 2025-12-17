@@ -70,17 +70,15 @@ def cli(
             "Downloading subtitles...", total=None, start=False
         )
         sub = downloader(url=url, reqlang=language, keepfiles=keepfiles)
-    systemprompt = " You are a helpful assistant that summarizes video subtitles into concise summaries. output the summary in markdown format."
-    userprompt = f"Provide a concise summary in {language} of the following subtitles from a video"
-    # Summarization spinner
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-    ) as progress:
+        progress.update(download_task, description="✓ Subtitles downloaded")
+
+        systemprompt = " You are a helpful assistant that summarizes video subtitles into concise summaries. output the summary in markdown format."
+        userprompt = f"Provide a concise summary in {language} of the following subtitles from a video"
         summarize_task = progress.add_task(
             "Summarizing subtitles...", total=None, start=False
         )
         summary = summarizer(sub, model, userprompt, systemprompt)
+        progress.update(summarize_task, description="✓ Summary complete")
 
     # Display summary in console
     console.print(Markdown("# Summary\n" + summary))
