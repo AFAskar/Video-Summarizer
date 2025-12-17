@@ -77,8 +77,11 @@ def cli(
         console.print("✓ Subtitles downloaded")
 
         summarize_task = progress.add_task("Summarizing subtitles...", total=None)
-        summary = chat_completion(
-            sub, model, USERPROMPT.format(language=language), SYSTEMPROMPT
+        summary = chunk_summarize_recursive(
+            sub,
+            model,
+            userprompt=USERPROMPT.format(language=language),
+            systemprompt=SYSTEMPROMPT,
         )
         progress.remove_task(summarize_task)
         console.print("✓ Summary complete")
@@ -202,9 +205,12 @@ def get_token_count(text: str) -> int:
     return len(_tokenizer.encode(text))
 
 
-@memory.cache()
-def count_chat_tokens(SYSTEMPROMPT: str, USERPROMPT: str, text: str) -> int:
-    combined_text = f"{SYSTEMPROMPT}\n{USERPROMPT}\n{text}"
+def count_chat_tokens(
+    text: str,
+    systemprompt: str = SYSTEMPROMPT,
+    userprompt: str = USERPROMPT,
+) -> int:
+    combined_text = f"{systemprompt}\n{userprompt}\n{text}"
     return get_token_count(combined_text)
 
 
@@ -217,11 +223,12 @@ def get_safe_context_length(
     return int(max_tokens * margin) - response_buffer
 
 
-# list map
 from multiprocessing.pool import ThreadPool
 
 
-def chunk_summarize_recursive(text):
+def chunk_summarize_recursive(
+    text, model: str, userprompt: str = USERPROMPT, systemprompt: str = SYSTEMPROMPT
+) -> str:
     input_budget = get_safe_context_length(model)
     cleaned_text = clean_subtitle(text)
     token_count = count_chat_tokens(cleaned_text)
@@ -230,7 +237,9 @@ def chunk_summarize_recursive(text):
         chunks = split_into_chunks(text)
         summaries = []
         for chunk in chunks:
-            summary = chat_completion(chunk, model)
+            summary = chat_completion(
+                chunk, model, userprompt=userprompt, systemprompt=systemprompt
+            )
             summaries.append(summary)
 
         combined_summary = "\n\n".join(summaries)
@@ -252,7 +261,7 @@ def chunk_summarize_recursive(text):
 def chat_completion(
     text: str,
     model: str = "nvidia/nemotron-3-nano-30b-a3b:free",
-    systemprompt: str = SYSTEMPROMPT,
+    systemprompt: str = SYSTEMPROMPT.format(language="en"),
     userprompt: str = USERPROMPT,
 ) -> str:
 
