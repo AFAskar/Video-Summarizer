@@ -15,7 +15,7 @@ from functools import partial
 from faster_whisper import WhisperModel
 from multiprocessing.pool import ThreadPool
 from datetime import timedelta
-
+import validators
 from ythelper import download_audio, download_multi_subs, download_subtitle, ytsearch
 
 # TODO: add concurrensy for downloading audio in the background while downloading subtitles
@@ -100,7 +100,9 @@ def cli(
     ) as progress:
         download_task = progress.add_task("Downloading subtitles...", total=None)
         if isurl:
-            sub = downloader(url=url, reqlang=language, audio=daudio, subtitle=dsub)
+            sub = [].append(
+                downloader(url=url, reqlang=language, audio=daudio, subtitle=dsub)
+            )
         else:
             term = ytsearch(query if query else url)
             ls = download_multi_subs(term)
@@ -129,9 +131,9 @@ def cli(
     console.print(Markdown("\n# Summary\n" + summary))
 
 
-def issrt(text: str) -> bool:
+def issrt(text: list[str]) -> bool:
     try:
-        list(srt.parse(text))
+        list(srt.parse(text[0]))
         return True
     except Exception:
         return False
@@ -185,9 +187,9 @@ def downloader(
     return sub_content
 
 
-def semantic_chunker(subtitle: str) -> list[str]:
+def semantic_chunker(subtitle: list[str]) -> list[str]:
     # split subtitle into chunks based on silences(long time gaps between timestamps)
-    subtitles = list(srt.parse(subtitle))
+    subtitles = list(srt.parse(subtitle[0]))
     chunks = []
     current_chunk = []
     last_end = None
@@ -256,7 +258,9 @@ def count_chat_tokens(
 
 
 def get_safe_context_length(
-    model: str, margin: float = 0.85, response_buffer: int = 500
+    model: str = "nvidia/nemotron-3-nano-30b-a3b:free",
+    margin: float = 0.85,
+    response_buffer: int = 500,
 ) -> int:
     max_tokens = get_model_context_length(model)
     if not max_tokens:
@@ -264,21 +268,21 @@ def get_safe_context_length(
     return int(max_tokens * margin) - response_buffer
 
 
-def non_semantic_chunker(text: str, max_chunk_size: int) -> list[str]:
-    words = text.split()
-    chunks = []
-    current_chunk = []
-
-    for word in words:
-        current_chunk.append(word)
-        if len(" ".join(current_chunk)) >= max_chunk_size:
-            chunks.append(" ".join(current_chunk))
-            current_chunk = []
-
+def non_semantic_chunker(chunks: list[str]) -> list[str]:
+    max_chunk_size = get_safe_context_length()
+    current_chunk = ""
+    chunked_list = []
+    for chunk in chunks:
+        token_count = count_chat_tokens(chunk)
+        if token_count + count_chat_tokens(current_chunk) <= max_chunk_size:
+            current_chunk += "\n\n" + chunk
+        else:
+            if current_chunk:
+                chunked_list.append(current_chunk.strip())
+            current_chunk = chunk
     if current_chunk:
-        chunks.append(" ".join(current_chunk))
-
-    return chunks
+        chunked_list.append(current_chunk.strip())
+    return chunked_list
 
 
 def chunk_summarize_recursive(
@@ -293,11 +297,10 @@ def chunk_summarize_recursive(
         input_budget = input_budget // len(chunks)
     token_count = count_chat_tokens(text)
     if token_count > input_budget:
-        if issrt(text):
-            chunks = semantic_chunker(text)
+        if issrt(chunks):
+            chunks = semantic_chunker(chunks)
         else:
-            chunks = non_semantic_chunker(text, max_chunk_size=1000)
-
+            chunks = non_semantic_chunker(chunks, max_chunk_size=2000)
         summarize_chunk = partial(
             chat_completion,
             model=model,
