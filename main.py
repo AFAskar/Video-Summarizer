@@ -13,6 +13,9 @@ from joblib import Memory
 import srt
 import tiktoken
 
+# TODO: add progress bars for downloads and summarization steps
+# TODO: use concurrensy or threading to speed up return to console (get summary whilst downloading vid or vicea versa)
+
 _tokenizer = tiktoken.get_encoding("cl100k_base")
 
 console = Console()
