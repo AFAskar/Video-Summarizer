@@ -151,8 +151,10 @@ def summarizer(text: str, model: str, userprompt: str, systemprompt: str) -> str
     if not max_tokens:
         raise ValueError(f"Could not retrieve model info for model: {model}")
     max_tokens = max_tokens - 500  # leave some buffer for response tokens
+    cleaned_text = clean_subtitle(text)
+    word_count = len(cleaned_text.split())
     # if text is too long, split into chunks and summarize each chunk
-    if len(text) > max_tokens:
+    if word_count > max_tokens:
         chunks = split_into_chunks(text)
         summaries = []
         for chunk in chunks:
@@ -165,7 +167,6 @@ def summarizer(text: str, model: str, userprompt: str, systemprompt: str) -> str
         else:
             return combined_summary
 
-    cleaned_text = clean_subtitle(text)
     completion = client.chat.completions.create(
         model=model,
         messages=[
