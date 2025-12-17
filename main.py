@@ -23,7 +23,6 @@ from ythelper import download_audio, download_multi_subs, download_subtitle, yts
 # TODO: Implement Fallback to Whisper if no subtitles found (blocker above)
 # TODO: add option to send a search query instead of URL (function done needs to be integrated)
 _tokenizer = tiktoken.get_encoding("cl100k_base")
-divdiv = 1
 console = Console()
 app = typer.Typer()
 
@@ -101,7 +100,6 @@ def cli(
         else:
             term = ytsearch(query if query else url)
             ls = download_multi_subs(term)
-            divdiv = len(ls)
             sub = "\n\n\n---\n\n\n".join(list(map(parrec, ls)))
 
         progress.remove_task(download_task)
@@ -249,7 +247,7 @@ def get_safe_context_length(
     max_tokens = get_model_context_length(model)
     if not max_tokens:
         raise ValueError(f"Could not retrieve model info for model: {model}")
-    return int(max_tokens * margin / divdiv) - response_buffer
+    return int(max_tokens * margin) - response_buffer
 
 
 def chunk_summarize_recursive(
