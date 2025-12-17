@@ -19,9 +19,9 @@ from multiprocessing.pool import ThreadPool
 from datetime import timedelta
 import validators
 
-# TODO: add concurrensy for downloading audio
-# TODO: Implement Fallback to Whisper if no subtitles found
-# TODO: add option to send a search query instead of URL
+# TODO: add concurrensy for downloading audio in the background while downloading subtitles
+# TODO: Implement Fallback to Whisper if no subtitles found (blocker above)
+# TODO: add option to send a search query instead of URL (function done needs to be integrated)
 _tokenizer = tiktoken.get_encoding("cl100k_base")
 
 console = Console()
@@ -149,7 +149,15 @@ def generate_transcript_using_whisper(audio_file: Path, language: str = "en") ->
     return transcript
 
 
-def download_subtitle(url: str, reqlang: str, subtitle: bool = False) -> str:
+def download_multi_subs(urls: list[str], reqlang: str = "en") -> list[str]:
+    subtitles = []
+    for url in urls:
+        sub = download_subtitle(url, reqlang)
+        subtitles.append(sub)
+    return subtitles
+
+
+def download_subtitle(url: str, reqlang: str = "en", subtitle: bool = False) -> str:
     ydl_opts = {
         "subtitleslangs": [reqlang],
         "writesubtitles": True,
