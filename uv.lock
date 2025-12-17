@@ -425,6 +425,12 @@ wheels = [
 ]
 
 [[package]]
+name = "srt"
+version = "3.5.3"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/66/b7/4a1bc231e0681ebf339337b0cd05b91dc6a0d701fa852bb812e244b7a030/srt-3.5.3.tar.gz", hash = "sha256:4884315043a4f0740fd1f878ed6caa376ac06d70e135f306a6dc44632eed0cc0", size = 28296, upload-time = "2023-03-28T02:35:44.007Z" }
+
+[[package]]
 name = "tqdm"
 version = "4.67.1"
 source = { registry = "https://pypi.org/simple" }
@@ -498,6 +504,7 @@ dependencies = [
     { name = "openai" },
     { name = "pathlib" },
     { name = "requests" },
+    { name = "srt" },
     { name = "typer" },
     { name = "yt-dlp" },
 ]
@@ -507,6 +514,7 @@ requires-dist = [
     { name = "openai", specifier = ">=2.12.0" },
     { name = "pathlib", specifier = ">=1.0.1" },
     { name = "requests", specifier = ">=2.32.5" },
+    { name = "srt", specifier = ">=3.5.3" },
     { name = "typer", specifier = ">=0.20.0" },
     { name = "yt-dlp", specifier = ">=2025.12.8" },
 ]

@@ -4,11 +4,15 @@ from pathlib import Path
 import requests
 from openai import OpenAI
 from rich import print
+from rich.console import Console
+from rich.markdown import Markdown
 import os
 import re
 import json
 from joblib import Memory
+import srt
 
+console = Console()
 app = typer.Typer()
 
 """
@@ -51,11 +55,16 @@ def cli(
 ):
 
     sub = downloader(url, output, language)
-    systemprompt = " You are a helpful assistant that summarizes video subtitles into concise summaries."
+    systemprompt = " You are a helpful assistant that summarizes video subtitles into concise summaries. output the summary in markdown format."
     userprompt = f"Provide a concise summary in {language} of the following subtitles from a video"
     summary = summarizer(sub, model, userprompt, systemprompt)
 
-    print(summary)
+    # Display summary in console
+    console.print(Markdown("# Summary\n" + summary))
+    # Save summary to a file
+    summary_file = output.with_suffix(".summary.md") if output else Path("summary.md")
+    summary_file.write_text(summary, encoding="utf-8")
+    print(f"\n[bold blue]Summary saved to {summary_file}[/bold blue]")
 
 
 # Downloads video and subtitles , only saves Video to a file
@@ -88,8 +97,21 @@ def downloader(url: str, path: Path, reqlang: str, subtitleformat: str = "srt") 
 @memory.cache()
 def split_into_chunks(subtitle: str) -> list[str]:
     # split subtitle into chunks based on silences(long time gaps between timestamps)
-
-    return
+    subtitles = list(srt.parse(subtitle))
+    chunks = []
+    current_chunk = []
+    last_end = None
+    for sub in subtitles:
+        if last_end is not None:
+            gap = (sub.start - last_end).total_seconds()
+            if gap > 10:  # if gap is more than 10 seconds, start a new chunk
+                chunks.append(srt.compose(current_chunk))
+                current_chunk = []
+        current_chunk.append(sub)
+        last_end = sub.end
+    if current_chunk:
+        chunks.append(srt.compose(current_chunk))
+    return chunks
 
 
 def merge_chunks(chunks: list[str]) -> str:
@@ -148,7 +170,7 @@ def summarizer(text: str, model: str, userprompt: str, systemprompt: str) -> str
         summaries = []
         for chunk in chunks:
             summary = summarizer(chunk, model, userprompt, systemprompt)
-            summaries.append(clean_subtitle(summary))
+            summaries.append(summary)
         combined_summary = " ".join(summaries)
         # if combined summary is still too long, summarize again
         if len(combined_summary.split()) > max_tokens:
@@ -156,6 +178,7 @@ def summarizer(text: str, model: str, userprompt: str, systemprompt: str) -> str
         else:
             return combined_summary
 
+    cleaned_text = clean_subtitle(text)
     completion = client.chat.completions.create(
         model=model,
         messages=[
@@ -165,7 +188,7 @@ def summarizer(text: str, model: str, userprompt: str, systemprompt: str) -> str
             },
             {
                 "role": "user",
-                "content": f"{userprompt}:\n{text.strip()}",
+                "content": f"{userprompt}:\n{cleaned_text}",
             },
         ],
     )
