@@ -13,6 +13,7 @@ import json
 from joblib import Memory
 import srt
 import tiktoken
+from functools import partial
 
 # TODO: use concurrensy or threading to speed up return to console (get summary whilst downloading vid or vicea versa)
 
@@ -95,6 +96,37 @@ def cli(
             console.print(f"✓ Summary saved to {summary_file}")
 
     console.print(Markdown("\n# Summary\n" + summary))
+
+
+def download_subtitle(url: str, reqlang: str, subtitle: bool = False) -> str:
+    ydl_opts = {
+        "subtitleslangs": [reqlang],
+        "writesubtitles": True,
+        "skip_download": False,
+        "subtitlesformat": "srt",
+        "writeautomaticsub": True,
+        "format_sort": ["+size", "+res"],
+        "quiet": True,
+        "no_warnings": True,
+    }
+
+    with YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(url)
+        base = Path(ydl.prepare_filename(info)).with_suffix("")
+        sub_file = base.with_suffix(f".{reqlang}.srt")
+        if not sub_file.exists():
+            # Try automatic captions
+            sub_file = base.with_suffix(f".{reqlang}.auto.srt")
+            if not sub_file.exists():
+                raise ValueError(f"No subtitles found for language: {reqlang}")
+        sub_content = sub_file.read_text(encoding="utf-8")
+        if not subtitle:
+            try:
+                sub_file.unlink()
+            except Exception as e:
+                print(f"Error deleting files: {e}")
+
+    return sub_content
 
 
 # Downloads video and subtitles , only saves Video to a file
@@ -235,12 +267,16 @@ def chunk_summarize_recursive(
     # if text is too long, split into chunks and summarize each chunk
     if token_count > input_budget:
         chunks = split_into_chunks(text)
-        summaries = []
-        for chunk in chunks:
-            summary = chat_completion(
-                chunk, model, userprompt=userprompt, systemprompt=systemprompt
-            )
-            summaries.append(summary)
+        summarize_chunk = partial(
+            chat_completion,
+            model=model,
+            userprompt=userprompt,
+            systemprompt=systemprompt,
+        )
+        summaries = list(map(summarize_chunk, chunks))
+        # for chunk in chunks:
+        #     summary = summarize_chunk(chunk)
+        #     summaries.append(summary)
 
         combined_summary = "\n\n".join(summaries)
 
