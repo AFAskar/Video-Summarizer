@@ -249,7 +249,7 @@ def get_safe_context_length(
     max_tokens = get_model_context_length(model)
     if not max_tokens:
         raise ValueError(f"Could not retrieve model info for model: {model}")
-    return int(max_tokens * margin) - response_buffer
+    return int(max_tokens * margin / divdiv) - response_buffer
 
 
 def chunk_summarize_recursive(
