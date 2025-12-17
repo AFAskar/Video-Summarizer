@@ -85,6 +85,11 @@ def cli(
             SUMMARYUSERPROMPT.format(language=language) if isurl else USERPROMPT
         ),
         systemprompt=(SUMMARYPROMPT if isurl else SYSTEMPROMPT),
+        switch=True,
+    )
+    systemprompt = SUMMARYPROMPT if isurl else SYSTEMPROMPT
+    userprompt = (
+        (SUMMARYUSERPROMPT.format(language=language) if isurl else USERPROMPT),
     )
     daudio = "a" in keepfiles
     dsub = "s" in keepfiles
@@ -108,7 +113,7 @@ def cli(
         summarize_task = progress.add_task("Summarizing subtitles...", total=None)
         # run this once per video
 
-        summary = parrec(sub)
+        summary = chunk_summarize_recursive(sub, model, userprompt, systemprompt)
         # results in summaries list, the total length of all the summaries should fit in the input context size, this is something to consider when calculating the budget (it should be divided by the number of videos)
         # and all of those should be joined and then put into one LLM call which answers the question (or produces the final summary)
         progress.remove_task(summarize_task)
@@ -255,8 +260,11 @@ def chunk_summarize_recursive(
     model: str,
     userprompt: str = USERPROMPT,
     systemprompt: str = SYSTEMPROMPT,
+    switch: bool = False,
 ) -> str:
     input_budget = get_safe_context_length(model)
+    if switch:
+        input_budget = input_budget // len(chunks)
     token_count = count_chat_tokens(text)
     if token_count > input_budget:
         chunks = split_into_chunks(text)
