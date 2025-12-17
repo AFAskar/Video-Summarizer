@@ -64,28 +64,27 @@ def cli(
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
+        console=console,
     ) as progress:
-        download_task = progress.add_task(
-            "Downloading subtitles...", total=None, start=False
-        )
+        download_task = progress.add_task("Downloading subtitles...", total=None)
         sub = downloader(url=url, reqlang=language, keepfiles=keepfiles)
-        progress.update(download_task, description="✓ Subtitles downloaded")
+        progress.remove_task(download_task)
+        console.print("✓ Subtitles downloaded")
 
-        systemprompt = "You are a helpful assistant that summarizes video subtitles into concise summaries. output the summary in markdown format. "
+        systemprompt = "You are a helpful assistant that summarizes video subtitles into concise summaries. output the summary in markdown format. use headings and bullet points where appropriate."
         userprompt = f"Provide a concise summary in {language} of the following subtitles from a video"
-        summarize_task = progress.add_task(
-            "Summarizing subtitles...", total=None, start=False
-        )
+        summarize_task = progress.add_task("Summarizing subtitles...", total=None)
         summary = summarizer(sub, model, userprompt, systemprompt)
-        progress.update(summarize_task, description="✓ Summary complete")
+        progress.remove_task(summarize_task)
+        console.print("✓ Summary complete")
+
         if output:
-            saving_task = progress.add_task(
-                "Saving summary to file...", total=None, start=False
-            )
+            saving_task = progress.add_task("Saving summary to file...", total=None)
             output.parent.mkdir(parents=True, exist_ok=True)
             summary_file = output
             summary_file.write_text("# Summary\n\n" + summary, encoding="utf-8")
-            progress.update(saving_task, description="✓ Summary saved to file")
+            progress.remove_task(saving_task)
+            console.print(f"✓ Summary saved to {summary_file}")
 
     console.print(Markdown("\n# Summary\n" + summary))
 
