@@ -1,3 +1,7 @@
+from yt_dlp import YoutubeDL
+from pathlib import Path
+
+
 def ytsearch(query: str) -> list[str]:
     urls = []
     ydl_opts = {

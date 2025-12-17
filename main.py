@@ -17,7 +17,8 @@ from functools import partial
 from faster_whisper import WhisperModel
 from multiprocessing.pool import ThreadPool
 from datetime import timedelta
-import validators
+
+# import validators
 from ythelper import download_audio, download_multi_subs, download_subtitle, ytsearch
 
 # TODO: add concurrensy for downloading audio in the background while downloading subtitles
@@ -30,7 +31,7 @@ app = typer.Typer()
 
 model_size = "small.en"
 
-sst = WhisperModel(model_size, device="cpu", compute_type="int8")
+# sst = WhisperModel(model_size, device="cpu", compute_type="int8")
 
 CACHE_DIR = "./cache/"
 
