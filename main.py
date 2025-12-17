@@ -6,6 +6,7 @@ from openai import OpenAI
 from rich import print
 from rich.console import Console
 from rich.markdown import Markdown
+from rich.progress import Progress, SpinnerColumn, TextColumn
 import os
 import re
 import json
@@ -60,10 +61,26 @@ def cli(
 ):
 
     keepfiles = [k.strip().lower() for k in keepfiles.split(",") if k.strip()]
-    sub = downloader(url=url, reqlang=language, keepfiles=keepfiles)
+    # Download subtitles spinner
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+    ) as progress:
+        download_task = progress.add_task(
+            "Downloading subtitles...", total=None, start=False
+        )
+        sub = downloader(url=url, reqlang=language, keepfiles=keepfiles)
     systemprompt = " You are a helpful assistant that summarizes video subtitles into concise summaries. output the summary in markdown format."
     userprompt = f"Provide a concise summary in {language} of the following subtitles from a video"
-    summary = summarizer(sub, model, userprompt, systemprompt)
+    # Summarization spinner
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+    ) as progress:
+        summarize_task = progress.add_task(
+            "Summarizing subtitles...", total=None, start=False
+        )
+        summary = summarizer(sub, model, userprompt, systemprompt)
 
     # Display summary in console
     console.print(Markdown("# Summary\n" + summary))
@@ -72,8 +89,7 @@ def cli(
         output.parent.mkdir(parents=True, exist_ok=True)
         summary_file = output
         summary_file.write_text("# Summary\n\n" + summary, encoding="utf-8")
-
-    print(f"\n[bold blue]Summary saved to {output}[/bold blue]")
+        print(f"\n[bold blue]Summary saved to {output}[/bold blue]")
 
 
 # Downloads video and subtitles , only saves Video to a file
@@ -93,6 +109,8 @@ def downloader(
         "subtitlesformat": "srt",
         "writeautomaticsub": True,
         "format_sort": ["+size", "+res"],
+        "quiet": True,
+        "no_warnings": True,
     }
     if audio and not video:
         ydl_opts["format"] = "bestaudio/best"
