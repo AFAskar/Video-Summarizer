@@ -15,11 +15,6 @@ import srt
 console = Console()
 app = typer.Typer()
 
-"""
-Recursive Summarization means breaking down a large text into smaller chunks, 
-summarizing each chunk individually, and then combining those summaries into a final summary. 
-each of those summaries can be further summarized if they are still too long.
-"""
 CACHE_DIR = "./cache/"
 
 client = OpenAI(
