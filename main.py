@@ -18,6 +18,7 @@ from faster_whisper import WhisperModel
 from multiprocessing.pool import ThreadPool
 from datetime import timedelta
 import validators
+from ythelper import download_audio, download_multi_subs, download_subtitle, ytsearch
 
 # TODO: add concurrensy for downloading audio in the background while downloading subtitles
 # TODO: Implement Fallback to Whisper if no subtitles found (blocker above)
@@ -43,23 +44,6 @@ SYSTEMPROMPT = "You are a helpful assistant that summarizes video subtitles into
 USERPROMPT = (
     "Provide a concise summary in {language} of the following subtitles from a video"
 )
-
-
-# YouTube Search function to get video URLs from search query
-def ytsearch(query: str) -> list[str]:
-    urls = []
-    ydl_opts = {
-        "quiet": True,
-        "no_warnings": True,
-        "skip_download": True,
-        "default_search": "ytsearch10",
-    }
-    with YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(query, download=False)
-        for entry in info["entries"]:
-            urls.append(f"https://www.youtube.com/watch?v={entry['id']}")
-
-    return urls
 
 
 @app.command()
@@ -125,6 +109,7 @@ def cli(
     console.print(Markdown("\n# Summary\n" + summary))
 
 
+@memory.cache()
 def generate_transcript_using_whisper(audio_file: Path, language: str = "en") -> str:
     segments, info = sst.transcribe(
         str(audio_file),
@@ -147,64 +132,6 @@ def generate_transcript_using_whisper(audio_file: Path, language: str = "en") ->
     # Compose into SRT format string
     transcript = srt.compose(srt_entries)
     return transcript
-
-
-def download_multi_subs(urls: list[str], reqlang: str = "en") -> list[str]:
-    subtitles = []
-    for url in urls:
-        sub = download_subtitle(url, reqlang)
-        subtitles.append(sub)
-    return subtitles
-
-
-def download_subtitle(url: str, reqlang: str = "en", subtitle: bool = False) -> str:
-    ydl_opts = {
-        "subtitleslangs": [reqlang],
-        "writesubtitles": True,
-        "skip_download": True,
-        "subtitlesformat": "srt",
-        "writeautomaticsub": True,
-        "format_sort": ["+size", "+res"],
-        "quiet": True,
-        "no_warnings": True,
-    }
-
-    with YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url)
-        base = Path(ydl.prepare_filename(info)).with_suffix("")
-        sub_file = base.with_suffix(f".{reqlang}.srt")
-        if not sub_file.exists():
-            sub_file = base.with_suffix(f".{reqlang}.auto.srt")
-            if not sub_file.exists():
-                sub_file = base.with_suffix(f".{reqlang}.auto.vtt")
-            if not sub_file.exists():
-                raise ValueError(f"No subtitles found for language: {reqlang}")
-        sub_content = sub_file.read_text(encoding="utf-8")
-        if not subtitle:
-            sub_file.unlink()
-
-    return sub_content
-
-
-# Download Audio based on keepfiles return file name
-def download_audio(url: str) -> str:
-    ydl_opts = {
-        "skip_download": False,
-        "format": "bestaudio/best",
-        "postprocessors": [
-            {
-                "key": "FFmpegExtractAudio",
-                "preferredcodec": "mp3",
-                "preferredquality": "192",
-            }
-        ],
-        "quiet": True,
-        "no_warnings": True,
-        "no_overwrites": True,
-    }
-    with YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url)
-    return ydl.prepare_filename(info)
 
 
 @memory.cache()
