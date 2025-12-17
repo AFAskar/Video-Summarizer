@@ -107,12 +107,6 @@ def split_into_chunks(subtitle: str) -> list[str]:
     return chunks
 
 
-def merge_chunks(chunks: list[str]) -> str:
-    # clean and merge chunks into single text
-    merged_text = "\n".join([clean_subtitle(chunk) for chunk in chunks])
-    return merged_text
-
-
 @memory.cache()
 def clean_subtitle(text: str) -> str:
     text = re.sub(
