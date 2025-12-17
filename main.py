@@ -98,12 +98,11 @@ def cli(
     console.print(Markdown("\n# Summary\n" + summary))
 
 
-@memory.cache()
 def download_subtitle(url: str, reqlang: str, subtitle: bool = False) -> str:
     ydl_opts = {
         "subtitleslangs": [reqlang],
         "writesubtitles": True,
-        "skip_download": False,
+        "skip_download": True,
         "subtitlesformat": "srt",
         "writeautomaticsub": True,
         "format_sort": ["+size", "+res"],
@@ -119,6 +118,8 @@ def download_subtitle(url: str, reqlang: str, subtitle: bool = False) -> str:
             # Try automatic captions
             sub_file = base.with_suffix(f".{reqlang}.auto.srt")
             if not sub_file.exists():
+                sub_file = base.with_suffix(f".{reqlang}.auto.vtt")
+            if not sub_file.exists():
                 raise ValueError(f"No subtitles found for language: {reqlang}")
         sub_content = sub_file.read_text(encoding="utf-8")
         if not subtitle:
@@ -131,14 +132,15 @@ def download_subtitle(url: str, reqlang: str, subtitle: bool = False) -> str:
 
 
 # Download Video and Audio based on keepfiles
-def download_video_audio(url: str, video: bool = True, audio: bool = False) -> None:
+def download_video_audio(url: str, audio_only: bool = False) -> None:
     ydl_opts = {
-        "skip_download": not (video or audio),
+        "skip_download": False,
         "format_sort": ["+size", "+res"],
         "quiet": True,
         "no_warnings": True,
+        "no_overwrites": True,
     }
-    if audio and not video:
+    if audio_only:
         ydl_opts["format"] = "bestaudio/best"
         ydl_opts["postprocessors"] = [
             {
@@ -153,7 +155,6 @@ def download_video_audio(url: str, video: bool = True, audio: bool = False) -> N
     return
 
 
-# Downloads video and subtitles , only saves Video to a file
 @memory.cache()
 def downloader(
     url: str,
@@ -163,42 +164,14 @@ def downloader(
     video = True if "v" in keepfiles else False
     audio = True if "a" in keepfiles else False
     subtitle = True if "s" in keepfiles else False
-    ydl_opts = {
-        "subtitleslangs": [reqlang],
-        "writesubtitles": True,
-        "skip_download": not (video or audio),
-        "subtitlesformat": "srt",
-        "writeautomaticsub": True,
-        "format_sort": ["+size", "+res"],
-        "quiet": True,
-        "no_warnings": True,
-    }
+
     if audio and not video:
-        ydl_opts["format"] = "bestaudio/best"
-        ydl_opts["postprocessors"] = [
-            {
-                "key": "FFmpegExtractAudio",
-                "preferredcodec": "mp3",
-                "preferredquality": "192",
-            }
-        ]
+        download_video_audio(url, audio_only=True)
 
-    with YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url)
-        base = Path(ydl.prepare_filename(info)).with_suffix("")
-        sub_file = base.with_suffix(f".{reqlang}.srt")
-        if not sub_file.exists():
-            # Try automatic captions
-            sub_file = base.with_suffix(f".{reqlang}.auto.srt")
-            if not sub_file.exists():
-                raise ValueError(f"No subtitles found for language: {reqlang}")
-        sub_content = sub_file.read_text(encoding="utf-8")
-        if not subtitle:
-            try:
-                sub_file.unlink()
-            except Exception as e:
-                print(f"Error deleting files: {e}")
+    if video:
+        download_video_audio(url, audio_only=False)
 
+    sub_content = download_subtitle(url, reqlang, subtitle=subtitle)
     return sub_content
 
 
