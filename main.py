@@ -16,7 +16,7 @@ import tiktoken
 from functools import partial
 from faster_whisper import WhisperModel
 from multiprocessing.pool import ThreadPool
-
+from datetime import timedelta
 
 # TODO: add concurrensy for downloading audio
 # TODO: Implement Fallback to Whisper if no subtitles found
@@ -69,7 +69,7 @@ def cli(
         "",
         "-k",
         "--keepfiles",
-        help="Keep downloaded subtitle and video files. Options: 'v' for video, 'a' for audio, 's' for subtitles (comma-separated)",
+        help="Keep downloaded subtitle and audio files. Options: 'a' for audio, 's' for subtitles (comma-separated)",
     ),
 ):
 
@@ -107,7 +107,27 @@ def cli(
     console.print(Markdown("\n# Summary\n" + summary))
 
 
-def generate_transcript_using_whisper(audio_file: Path, language: str) -> str:
+def generate_transcript_using_whisper(audio_file: Path, language: str = "en") -> str:
+    segments, info = model.transcribe(
+        str(audio_file),
+        beam_size=5,
+        word_timestamps=True,
+        language=language,
+    )
+
+    # Convert segments to SRT format
+    srt_entries = []
+    for i, segment in enumerate(segments, start=1):
+        sub = srt.Subtitle(
+            index=i,
+            start=timedelta(seconds=segment.start),
+            end=timedelta(seconds=segment.end),
+            content=segment.text.strip(),
+        )
+        srt_entries.append(sub)
+
+    # Compose into SRT format string
+    transcript = srt.compose(srt_entries)
     return transcript
 
 
@@ -140,8 +160,8 @@ def download_subtitle(url: str, reqlang: str, subtitle: bool = False) -> str:
     return sub_content
 
 
-# Download Video and Audio based on keepfiles
-def download_video_audio(url: str) -> None:
+# Download Audio based on keepfiles return file name
+def download_audio(url: str) -> str:
     ydl_opts = {
         "skip_download": False,
         "format": "bestaudio/best",
@@ -158,7 +178,7 @@ def download_video_audio(url: str) -> None:
     }
     with YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url)
-    return
+    return ydl.prepare_filename(info)
 
 
 @memory.cache()
@@ -167,29 +187,24 @@ def downloader(
     reqlang: str,
     keepfiles: list = [],
 ) -> str:
-    video = True if "v" in keepfiles else False
     audio = True if "a" in keepfiles else False
     subtitle = True if "s" in keepfiles else False
 
     if audio:
-        download_video_audio(url, audio_only=True)
+        file = download_audio(url, audio_only=True)
 
-    if video:
-        download_video_audio(url, audio_only=False)
     try:
         sub_content = download_subtitle(url, reqlang, subtitle=subtitle)
     except ValueError as e:
         # use whisper to generate subtitles if not found
         console.print("No subtitles found, generating using Whisper...")
 
-        if audio and not video:
+        if audio:
             # use directly
-            pass
-        if video:
-            # parse audio from video
-            pass
+            sub_content = generate_transcript_using_whisper(file, language=reqlang)
         else:
-            download_video_audio(url, audio_only=True)
+            file = download_audio(url, audio_only=True)
+            sub_content = generate_transcript_using_whisper(file, language=reqlang)
 
     return sub_content
 
