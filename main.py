@@ -34,7 +34,7 @@ def cli(
         None,
         "-o",
         "--output",
-        help="Output Video name.",
+        help="Output Summary file.",
     ),
     language: str = typer.Option(
         "en",
@@ -48,9 +48,15 @@ def cli(
         "--model",
         help="OpenRouter model to use for summarization",
     ),
+    keepfiles: bool = typer.Option(
+        False,
+        "-k",
+        "--keepfiles",
+        help="Keep downloaded subtitle and video files",
+    ),
 ):
 
-    sub = downloader(url, output, language)
+    sub = downloader(url=url, reqlang=language, keepfiles=keepfiles)
     systemprompt = " You are a helpful assistant that summarizes video subtitles into concise summaries. output the summary in markdown format."
     userprompt = f"Provide a concise summary in {language} of the following subtitles from a video"
     summary = summarizer(sub, model, userprompt, systemprompt)
@@ -58,34 +64,43 @@ def cli(
     # Display summary in console
     console.print(Markdown("# Summary\n" + summary))
     # Save summary to a file
-    summary_file = output.with_suffix(".summary.md") if output else Path("summary.md")
-    summary_file.write_text(summary, encoding="utf-8")
-    print(f"\n[bold blue]Summary saved to {summary_file}[/bold blue]")
+    if output:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        summary_file = output
+        summary_file.write_text("# Summary\n\n" + summary, encoding="utf-8")
+
+    print(f"\n[bold blue]Summary saved to {output}[/bold blue]")
 
 
 # Downloads video and subtitles , only saves Video to a file
-@memory.cache(ignore=["path"])
-def downloader(url: str, path: Path, reqlang: str, subtitleformat: str = "srt") -> str:
+@memory.cache()
+def downloader(
+    url: str,
+    reqlang: str,
+    keepfiles: bool = False,
+) -> str:
     ydl_opts = {
         "subtitleslangs": [reqlang],
         "writesubtitles": True,
-        "skip_download": not bool(path),
-        "subtitlesformat": subtitleformat,
+        "skip_download": not keepfiles,
+        "subtitlesformat": "srt",
         "writeautomaticsub": True,
-        "outtmpl": str(path) if path else "%(title)s.%(ext)s",
     }
     with YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url)
         base = Path(ydl.prepare_filename(info)).with_suffix("")
-        sub_file = base.with_suffix(f".{reqlang}.{subtitleformat}")
+        sub_file = base.with_suffix(f".{reqlang}.srt")
         if not sub_file.exists():
             # Try automatic captions
-            sub_file = base.with_suffix(f".{reqlang}.auto.{subtitleformat}")
+            sub_file = base.with_suffix(f".{reqlang}.auto.srt")
             if not sub_file.exists():
                 raise ValueError(f"No subtitles found for language: {reqlang}")
         sub_content = sub_file.read_text(encoding="utf-8")
-    # clean subtitle content
-    # remove timestamps and line numbers
+        if not keepfiles:
+            try:
+                sub_file.unlink()
+            except Exception as e:
+                print(f"Error deleting files: {e}")
 
     return sub_content
 
@@ -181,10 +196,18 @@ def summarizer(text: str, model: str, userprompt: str, systemprompt: str) -> str
         for chunk in chunks:
             summary = summarizer(chunk, model, userprompt, systemprompt)
             summaries.append(summary)
-        combined_summary = " ".join(summaries)
-        # if combined summary is still too long, summarize again
-        if count_chat_tokens(systemprompt, userprompt, combined_summary) > input_budget:
-            return summarizer(combined_summary, model, userprompt, systemprompt)
+        combined_summary = "\n\n".join(summaries)
+
+        combined_token_count = count_chat_tokens(
+            systemprompt, userprompt, combined_summary
+        )
+
+        if combined_token_count > input_budget:
+            meta_prompt = (
+                "Combine and summarize these summaries into a single coherent summary"
+            )
+
+            return summarizer(combined_summary, model, meta_prompt, systemprompt)
         else:
             return combined_summary
 
