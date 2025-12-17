@@ -15,10 +15,12 @@ import srt
 import tiktoken
 from functools import partial
 from faster_whisper import WhisperModel
+from multiprocessing.pool import ThreadPool
 
 
-# TODO: use concurrensy or threading to speed up return to console (get summary whilst downloading vid or vicea versa)
-
+# TODO: add concurrensy for downloading audio
+# TODO: Implement Fallback to Whisper if no subtitles found
+# TODO: add option to send a search query instead of URL
 _tokenizer = tiktoken.get_encoding("cl100k_base")
 
 console = Console()
@@ -267,9 +269,6 @@ def get_safe_context_length(
     if not max_tokens:
         raise ValueError(f"Could not retrieve model info for model: {model}")
     return int(max_tokens * margin) - response_buffer
-
-
-from multiprocessing.pool import ThreadPool
 
 
 def chunk_summarize_recursive(
