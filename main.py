@@ -71,22 +71,23 @@ def cli(
         sub = downloader(url=url, reqlang=language, keepfiles=keepfiles)
         progress.update(download_task, description="✓ Subtitles downloaded")
 
-        systemprompt = " You are a helpful assistant that summarizes video subtitles into concise summaries. output the summary in markdown format."
+        systemprompt = "You are a helpful assistant that summarizes video subtitles into concise summaries. output the summary in markdown format. "
         userprompt = f"Provide a concise summary in {language} of the following subtitles from a video"
         summarize_task = progress.add_task(
             "Summarizing subtitles...", total=None, start=False
         )
         summary = summarizer(sub, model, userprompt, systemprompt)
         progress.update(summarize_task, description="✓ Summary complete")
+        if output:
+            saving_task = progress.add_task(
+                "Saving summary to file...", total=None, start=False
+            )
+            output.parent.mkdir(parents=True, exist_ok=True)
+            summary_file = output
+            summary_file.write_text("# Summary\n\n" + summary, encoding="utf-8")
+            progress.update(saving_task, description="✓ Summary saved to file")
 
-    # Display summary in console
-    console.print(Markdown("# Summary\n" + summary))
-    # Save summary to a file
-    if output:
-        output.parent.mkdir(parents=True, exist_ok=True)
-        summary_file = output
-        summary_file.write_text("# Summary\n\n" + summary, encoding="utf-8")
-        print(f"\n[bold blue]Summary saved to {output}[/bold blue]")
+    console.print(Markdown("\n# Summary\n" + summary))
 
 
 # Downloads video and subtitles , only saves Video to a file
