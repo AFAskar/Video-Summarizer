@@ -29,6 +29,11 @@ client = OpenAI(
 )
 memory = Memory(CACHE_DIR, verbose=0)
 
+SYSTEMPROMPT = "You are a helpful assistant that summarizes video subtitles into concise summaries. output the summary in markdown format. use headings and bullet points where appropriate."
+USERPROMPT = (
+    "Provide a concise summary in {language} of the following subtitles from a video"
+)
+
 
 @app.command()
 def cli(
@@ -71,10 +76,10 @@ def cli(
         progress.remove_task(download_task)
         console.print("✓ Subtitles downloaded")
 
-        systemprompt = "You are a helpful assistant that summarizes video subtitles into concise summaries. output the summary in markdown format. use headings and bullet points where appropriate."
-        userprompt = f"Provide a concise summary in {language} of the following subtitles from a video"
         summarize_task = progress.add_task("Summarizing subtitles...", total=None)
-        summary = summarizer(sub, model, userprompt, systemprompt)
+        summary = chat_completion(
+            sub, model, USERPROMPT.format(language=language), SYSTEMPROMPT
+        )
         progress.remove_task(summarize_task)
         console.print("✓ Summary complete")
 
@@ -138,7 +143,6 @@ def downloader(
     return sub_content
 
 
-@memory.cache()
 def split_into_chunks(subtitle: str) -> list[str]:
     # split subtitle into chunks based on silences(long time gaps between timestamps)
     subtitles = list(srt.parse(subtitle))
@@ -158,7 +162,6 @@ def split_into_chunks(subtitle: str) -> list[str]:
     return chunks
 
 
-@memory.cache()
 def clean_subtitle(text: str) -> str:
     text = re.sub(
         r"^\d+\n|\d{2}:\d{2}:\d{2},\d{3} --> \d{2}:\d{2}:\d{2},\d{3}\n",
@@ -195,18 +198,16 @@ def get_model_context_length(model_id: str) -> int | None:
     return None  # Model not found
 
 
-@memory.cache()
 def get_token_count(text: str) -> int:
     return len(_tokenizer.encode(text))
 
 
 @memory.cache()
-def count_chat_tokens(systemprompt: str, userprompt: str, text: str) -> int:
-    combined_text = f"{systemprompt}\n{userprompt}\n{text}"
+def count_chat_tokens(SYSTEMPROMPT: str, USERPROMPT: str, text: str) -> int:
+    combined_text = f"{SYSTEMPROMPT}\n{USERPROMPT}\n{text}"
     return get_token_count(combined_text)
 
 
-@memory.cache()
 def get_safe_context_length(
     model: str, margin: float = 0.85, response_buffer: int = 500
 ) -> int:
@@ -216,33 +217,44 @@ def get_safe_context_length(
     return int(max_tokens * margin) - response_buffer
 
 
-@memory.cache()
-def summarizer(text: str, model: str, userprompt: str, systemprompt: str) -> str:
+# list map
+from multiprocessing.pool import ThreadPool
 
+
+def chunk_summarize_recursive(text):
     input_budget = get_safe_context_length(model)
     cleaned_text = clean_subtitle(text)
-    token_count = count_chat_tokens(systemprompt, userprompt, cleaned_text)
+    token_count = count_chat_tokens(cleaned_text)
     # if text is too long, split into chunks and summarize each chunk
     if token_count > input_budget:
         chunks = split_into_chunks(text)
         summaries = []
         for chunk in chunks:
-            summary = summarizer(chunk, model, userprompt, systemprompt)
+            summary = chat_completion(chunk, model)
             summaries.append(summary)
+
         combined_summary = "\n\n".join(summaries)
 
-        combined_token_count = count_chat_tokens(
-            systemprompt, userprompt, combined_summary
-        )
+        combined_token_count = count_chat_tokens(combined_summary)
 
         if combined_token_count > input_budget:
             meta_prompt = (
                 "Combine and summarize these summaries into a single coherent summary"
             )
 
-            return summarizer(combined_summary, model, meta_prompt, systemprompt)
+            return chat_completion(combined_summary, model, userprompt=meta_prompt)
         else:
             return combined_summary
+    return chat_completion(text, model)
+
+
+@memory.cache()
+def chat_completion(
+    text: str,
+    model: str = "nvidia/nemotron-3-nano-30b-a3b:free",
+    systemprompt: str = SYSTEMPROMPT,
+    userprompt: str = USERPROMPT,
+) -> str:
 
     completion = client.chat.completions.create(
         model=model,
@@ -253,7 +265,7 @@ def summarizer(text: str, model: str, userprompt: str, systemprompt: str) -> str
             },
             {
                 "role": "user",
-                "content": f"{userprompt}:\n{cleaned_text}",
+                "content": f"{userprompt}:\n{text}",
             },
         ],
     )
