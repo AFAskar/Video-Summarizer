@@ -48,14 +48,15 @@ def cli(
         "--model",
         help="OpenRouter model to use for summarization",
     ),
-    keepfiles: bool = typer.Option(
-        False,
+    keepfiles: str = typer.Option(
+        "",
         "-k",
         "--keepfiles",
-        help="Keep downloaded subtitle and video files",
+        help="Keep downloaded subtitle and video files. Options: 'v' for video, 'a' for audio, 's' for subtitles (comma-separated)",
     ),
 ):
 
+    keepfiles = [k.strip().lower() for k in keepfiles.split(",") if k.strip()]
     sub = downloader(url=url, reqlang=language, keepfiles=keepfiles)
     systemprompt = " You are a helpful assistant that summarizes video subtitles into concise summaries. output the summary in markdown format."
     userprompt = f"Provide a concise summary in {language} of the following subtitles from a video"
@@ -77,15 +78,29 @@ def cli(
 def downloader(
     url: str,
     reqlang: str,
-    keepfiles: bool = False,
+    keepfiles: list = [],
 ) -> str:
+    video = True if "v" in keepfiles else False
+    audio = True if "a" in keepfiles else False
+    subtitle = True if "s" in keepfiles else False
     ydl_opts = {
         "subtitleslangs": [reqlang],
         "writesubtitles": True,
-        "skip_download": not keepfiles,
+        "skip_download": not (video or audio),
         "subtitlesformat": "srt",
         "writeautomaticsub": True,
+        "format_sort": ["+size", "+res"],
     }
+    if audio and not video:
+        ydl_opts["format"] = "bestaudio/best"
+        ydl_opts["postprocessors"] = [
+            {
+                "key": "FFmpegExtractAudio",
+                "preferredcodec": "mp3",
+                "preferredquality": "192",
+            }
+        ]
+
     with YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url)
         base = Path(ydl.prepare_filename(info)).with_suffix("")
@@ -96,7 +111,7 @@ def downloader(
             if not sub_file.exists():
                 raise ValueError(f"No subtitles found for language: {reqlang}")
         sub_content = sub_file.read_text(encoding="utf-8")
-        if not keepfiles:
+        if not subtitle:
             try:
                 sub_file.unlink()
             except Exception as e:
@@ -145,7 +160,7 @@ def clean_subtitle(text: str) -> str:
 
 
 @memory.cache()
-def get_model_context_length(model_id):
+def get_model_context_length(model_id: str) -> int | None:
 
     # OpenRouter's models endpoint returns full metadata including context_length
     response = requests.get("https://openrouter.ai/api/v1/models")
