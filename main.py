@@ -11,6 +11,9 @@ import re
 import json
 from joblib import Memory
 import srt
+import tiktoken
+
+_tokenizer = tiktoken.get_encoding("cl100k_base")
 
 console = Console()
 app = typer.Typer()
@@ -145,16 +148,34 @@ def get_model_context_length(model_id):
 
 
 @memory.cache()
-def summarizer(text: str, model: str, userprompt: str, systemprompt: str) -> str:
-    # get max tokens for the model
+def get_token_count(text: str) -> int:
+    return len(_tokenizer.encode(text))
+
+
+@memory.cache()
+def count_chat_tokens(systemprompt: str, userprompt: str, text: str) -> int:
+    combined_text = f"{systemprompt}\n{userprompt}\n{text}"
+    return get_token_count(combined_text)
+
+
+@memory.cache()
+def get_safe_context_length(
+    model: str, margin: float = 0.85, response_buffer: int = 500
+) -> int:
     max_tokens = get_model_context_length(model)
     if not max_tokens:
         raise ValueError(f"Could not retrieve model info for model: {model}")
-    max_tokens = max_tokens - 500  # leave some buffer for response tokens
+    return int(max_tokens * margin) - response_buffer
+
+
+@memory.cache()
+def summarizer(text: str, model: str, userprompt: str, systemprompt: str) -> str:
+
+    input_budget = get_safe_context_length(model)
     cleaned_text = clean_subtitle(text)
-    word_count = len(cleaned_text.split())
+    token_count = count_chat_tokens(systemprompt, userprompt, cleaned_text)
     # if text is too long, split into chunks and summarize each chunk
-    if word_count > max_tokens:
+    if token_count > input_budget:
         chunks = split_into_chunks(text)
         summaries = []
         for chunk in chunks:
@@ -162,7 +183,7 @@ def summarizer(text: str, model: str, userprompt: str, systemprompt: str) -> str
             summaries.append(summary)
         combined_summary = " ".join(summaries)
         # if combined summary is still too long, summarize again
-        if len(combined_summary.split()) > max_tokens:
+        if count_chat_tokens(systemprompt, userprompt, combined_summary) > input_budget:
             return summarizer(combined_summary, model, userprompt, systemprompt)
         else:
             return combined_summary
