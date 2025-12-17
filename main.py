@@ -20,8 +20,6 @@ Recursive Summarization means breaking down a large text into smaller chunks,
 summarizing each chunk individually, and then combining those summaries into a final summary. 
 each of those summaries can be further summarized if they are still too long.
 """
-# TODO: recursive summarization using chunking
-# TODO: bonus: split based on silences using the subtitle timestmps
 CACHE_DIR = "./cache/"
 
 client = OpenAI(
