@@ -98,6 +98,7 @@ def cli(
     console.print(Markdown("\n# Summary\n" + summary))
 
 
+@memory.cache()
 def download_subtitle(url: str, reqlang: str, subtitle: bool = False) -> str:
     ydl_opts = {
         "subtitleslangs": [reqlang],
@@ -146,6 +147,7 @@ def download_video_audio(url: str, video: bool = True, audio: bool = False) -> N
                 "preferredquality": "192",
             }
         ]
+    # need to check if file exists before continuing
     with YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url)
     return
