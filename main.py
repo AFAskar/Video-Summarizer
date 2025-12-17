@@ -17,6 +17,7 @@ from functools import partial
 from faster_whisper import WhisperModel
 from multiprocessing.pool import ThreadPool
 from datetime import timedelta
+import validators
 
 # TODO: add concurrensy for downloading audio
 # TODO: Implement Fallback to Whisper if no subtitles found
@@ -42,6 +43,23 @@ SYSTEMPROMPT = "You are a helpful assistant that summarizes video subtitles into
 USERPROMPT = (
     "Provide a concise summary in {language} of the following subtitles from a video"
 )
+
+
+# YouTube Search function to get video URLs from search query
+def ytsearch(query: str) -> list[str]:
+    urls = []
+    ydl_opts = {
+        "quiet": True,
+        "no_warnings": True,
+        "skip_download": True,
+        "default_search": "ytsearch10",
+    }
+    with YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(query, download=False)
+        for entry in info["entries"]:
+            urls.append(f"https://www.youtube.com/watch?v={entry['id']}")
+
+    return urls
 
 
 @app.command()
