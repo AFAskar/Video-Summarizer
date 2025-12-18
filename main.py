@@ -18,9 +18,6 @@ from datetime import timedelta
 import validators
 from ythelper import download_audio, download_multi_subs, download_subtitle, ytsearch
 
-# TODO: add concurrensy for downloading audio in the background while downloading subtitles
-# TODO: Implement Fallback to Whisper if no subtitles found (blocker above)
-# TODO: add option to send a search query instead of URL (function done needs to be integrated)
 _tokenizer = tiktoken.get_encoding("cl100k_base")
 console = Console()
 app = typer.Typer()
@@ -100,13 +97,12 @@ def cli(
     ) as progress:
         download_task = progress.add_task("Downloading subtitles...", total=None)
         if isurl:
-            sub = [].append(
-                downloader(url=url, reqlang=language, audio=daudio, subtitle=dsub)
-            )
+            sub = [downloader(url=url, reqlang=language, audio=daudio, subtitle=dsub)]
+
         else:
             term = ytsearch(query if query else url)
             ls = download_multi_subs(term)
-            sub = "\n\n\n---\n\n\n".join(list(map(parrec, ls)))
+            sub = list(map(parrec, ls))
 
         progress.remove_task(download_task)
         console.print("✓ Subtitles downloaded")
@@ -131,12 +127,15 @@ def cli(
     console.print(Markdown("\n# Summary\n" + summary))
 
 
-def issrt(text: list[str]) -> bool:
-    try:
-        list(srt.parse(text[0]))
-        return True
-    except Exception:
-        return False
+def chunk_sub_else_non_semantic(sublist: list[str]) -> list[str]:
+    output = []
+    for sub in sublist:
+        try:
+            list(srt.parse(sub))
+            output.extend(semantic_chunker([sub]))
+        except Exception:
+            output.extend(non_semantic_chunker([sub]))
+    return output
 
 
 @memory.cache()
@@ -187,9 +186,9 @@ def downloader(
     return sub_content
 
 
-def semantic_chunker(subtitle: list[str]) -> list[str]:
+def semantic_chunker(subtitle: str) -> list[str]:
     # split subtitle into chunks based on silences(long time gaps between timestamps)
-    subtitles = list(srt.parse(subtitle[0]))
+    subtitles = list(srt.parse(subtitle))
     chunks = []
     current_chunk = []
     last_end = None
@@ -295,12 +294,12 @@ def chunk_summarize_recursive(
     input_budget = get_safe_context_length(model)
     if switch:
         input_budget = input_budget // len(chunks)
-    token_count = count_chat_tokens(text)
+    joined_text = "\n\n".join(chunks)
+
+    token_count = count_chat_tokens(joined_text)
     if token_count > input_budget:
-        if issrt(chunks):
-            chunks = semantic_chunker(chunks)
-        else:
-            chunks = non_semantic_chunker(chunks, max_chunk_size=2000)
+        chunks = chunk_sub_else_non_semantic(chunks)
+
         summarize_chunk = partial(
             chat_completion,
             model=model,
@@ -321,7 +320,7 @@ def chunk_summarize_recursive(
             return chat_completion(combined_summary, model, userprompt=meta_prompt)
         else:
             return combined_summary
-    return chat_completion(text, model)
+    return chat_completion(joined_text, model)
 
 
 @memory.cache()
