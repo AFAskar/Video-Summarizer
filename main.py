@@ -26,7 +26,7 @@ app = typer.Typer()
 
 model_size = "small.en"
 
-# sst = WhisperModel(model_size, device="cpu", compute_type="int8")
+sst = WhisperModel(model_size, device="cpu", compute_type="int8")
 
 CACHE_DIR = "./cache/"
 
