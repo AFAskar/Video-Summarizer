@@ -16,7 +16,9 @@ from faster_whisper import WhisperModel
 from multiprocessing.pool import ThreadPool
 from datetime import timedelta
 import validators
-from ythelper import download_audio, download_multi_subs, download_subtitle, ytsearch
+from ythelper import download_audio, download_subtitle, ytsearch
+from tqdm import tqdm
+
 
 _tokenizer = tiktoken.get_encoding("cl100k_base")
 console = Console()
@@ -163,12 +165,21 @@ def generate_transcript_using_whisper(audio_file: Path, language: str = "en") ->
     return transcript
 
 
+def download_multi_subs(urls: list[str], reqlang: str = "en") -> list[str]:
+    return list(
+        tqdm(
+            ThreadPool().imap(lambda url: downloader(url, reqlang), urls),
+            total=len(urls),
+        )
+    )
+
+
 @memory.cache()
 def downloader(
     url: str, reqlang: str, audio: bool = False, subtitle: bool = False
 ) -> str:
     if audio:
-        file = download_audio(url, audio_only=True)
+        file = download_audio(url)
 
     try:
         sub_content = download_subtitle(url, reqlang, subtitle=subtitle)
@@ -180,7 +191,7 @@ def downloader(
             # use directly
             sub_content = generate_transcript_using_whisper(file, language=reqlang)
         else:
-            file = download_audio(url, audio_only=True)
+            file = download_audio(url)
             sub_content = generate_transcript_using_whisper(file, language=reqlang)
 
     return sub_content
